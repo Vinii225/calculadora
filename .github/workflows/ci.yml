@@ -48,7 +48,6 @@ jobs:
       - name: Instalar Bandit
         run: python -m pip install bandit==1.9.4
 
-      # O Bandit lê o arquivo Python e falha se encontrar um problema.
       - name: Analisar a segurança do código
         run: python -m bandit calculadora.py
 
@@ -69,8 +68,8 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+          #
 
-      # Envia entradas ao programa em execução e verifica sua saída.
       - name: Validar entradas na calculadora em execução
         run: |
           python - <<'PY'
