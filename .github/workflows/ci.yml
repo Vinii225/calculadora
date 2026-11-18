@@ -27,3 +27,87 @@ jobs:
 
       - name: Rodar os testes
         run: pytest -v
+
+  sast:
+    name: SAST
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Baixar o código
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Configurar Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Instalar Bandit
+        run: python -m pip install bandit==1.9.4
+
+      # O Bandit lê o arquivo Python e falha se encontrar um problema.
+      - name: Analisar a segurança do código
+        run: python -m bandit calculadora.py
+
+  dast:
+    name: DAST (terminal)
+    needs: [testes, sast]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Baixar o código
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Configurar Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # Envia entradas ao programa em execução e verifica sua saída.
+      - name: Validar entradas na calculadora em execução
+        run: |
+          python - <<'PY'
+          import subprocess
+          import sys
+
+          # Cada caso informa as linhas de entrada e a mensagem esperada.
+          casos = {
+              "entrada normal": ("", None),
+              "entrada não numérica": ("texto\n", "Erro: could not convert string to float"),
+              "expressão no lugar de número": ("1 + 2\n", "Erro: could not convert string to float"),
+              "operador inválido": ("8\n%\n2\n", "Erro: Operador inválido: %"),
+              "divisão por zero": ("8\n/\n0\n", "Erro: Não é possível dividir por zero."),
+          }
+
+          # Em cada execução, o programa ainda deve somar 3 + 2 e aceitar 'sair'.
+          for nome, (entrada, erro_esperado) in casos.items():
+              processo = subprocess.run(
+                  [sys.executable, "-X", "utf8", "calculadora.py"],
+                  input=entrada + "3\n+\n2\nsair\n",
+                  capture_output=True,
+                  encoding="utf-8",
+                  timeout=5,
+              )
+
+              # Os textos do input() aparecem na mesma linha que as respostas.
+              saida = processo.stdout
+              if processo.returncode != 0 or processo.stderr:
+                  sys.exit(f"FALHA ({nome}): encerramento inesperado.\n{saida}\n{processo.stderr}")
+              if saida.count("Resultado:") != 1 or "Resultado: 5.0\n" not in saida:
+                  sys.exit(f"FALHA ({nome}): soma incorreta ou resultado inesperado.\n{saida}")
+              if erro_esperado is None and "Erro:" in saida:
+                  sys.exit(f"FALHA ({nome}): erro na entrada válida.\n{saida}")
+              if erro_esperado is not None and (
+                  saida.count("Erro:") != 1 or erro_esperado not in saida
+              ):
+                  sys.exit(f"FALHA ({nome}): a entrada deveria ser rejeitada.\n{saida}")
+
+              print(f"PASSOU: {nome}")
+          PY
